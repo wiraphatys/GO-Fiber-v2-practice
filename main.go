@@ -1,96 +1,45 @@
 package main
 
 import (
-	"strconv"
+	"log"
+	"os"
+	"time"
 
+	jwtware "github.com/gofiber/contrib/jwt"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/joho/godotenv"
 )
 
-type Book struct {
-	ID     int    `json:"id"`
-	Title  string `json:"title"`
-	Author string `json:"author"`
-}
-
-// handler function
-func getBooks(c *fiber.Ctx) error {
-	return c.JSON(books)
-}
-
-// handler function
-func getBookByID(c *fiber.Ctx) error {
-	id, err := strconv.Atoi(c.Params("id"))
-
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
-	}
-
-	for _, book := range books {
-		if book.ID == id {
-			return c.JSON(book)
-		}
-	}
-
-	return c.SendStatus(fiber.StatusNotFound)
-}
-
-// handler function
-func createBook(c *fiber.Ctx) error {
-	newBook := new(Book)
-	if err := c.BodyParser(newBook); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
-	}
-
-	for _, book := range books {
-		if newBook.ID == book.ID {
-			return c.Status(fiber.StatusConflict).SendString("Book with the given ID already exists.")
-		}
-	}
-
-	books = append(books, *newBook)
-	return c.Status(fiber.StatusCreated).SendString("Book has been created successfully.")
-}
-
-func updateBook(c *fiber.Ctx) error {
-	target := new(Book)
-	if err := c.BodyParser(target); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
-	}
-
-	for i, book := range books {
-		if book.ID == target.ID {
-			books[i] = *target
-			return c.Status(fiber.StatusOK).SendString("Book has been updated successfully.")
-		}
-	}
-
-	return c.SendStatus(fiber.StatusNotFound)
-}
-
-func deleteBook(c *fiber.Ctx) error {
-	targetID, err := strconv.Atoi(c.Params("id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
-	}
-
-	for i, book := range books {
-		if book.ID == int(targetID) {
-			books = append(books[:i], books[i+1:]...)
-			return c.Status(fiber.StatusOK).SendString("Book has been deleted.")
-		}
-	}
-
-	return c.SendStatus(fiber.StatusNotFound)
-}
-
-var books []Book
+// @title Book API
+// @description This is a sample server for a book API.
+// @version 1.0
+// @host localhost:8080
+// @BasePath /
+// @schemes http
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name Authorization
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		log.Fatal("load .env error")
+	}
+
 	app := fiber.New()
 
 	books = append(books, Book{ID: 1, Title: "GO Tutorial", Author: "Banky"})
 	books = append(books, Book{ID: 2, Title: "JAVA Master", Author: "Banky"})
 	books = append(books, Book{ID: 3, Title: "C++ Master", Author: "Banky 2"})
+
+	app.Post("/login", login)
+
+	// JWT Middleware
+	app.Use(jwtware.New(jwtware.Config{
+		SigningKey: jwtware.SigningKey{Key: []byte(os.Getenv("JWT_SECRET"))},
+	}))
+
+	app.Use(checkMiddleWare)
 
 	app.Get("/books", getBooks)
 	app.Get("/books/:id", getBookByID)
@@ -98,5 +47,73 @@ func main() {
 	app.Put("/books/update", updateBook)
 	app.Delete("/books/delete/:id", deleteBook)
 
+	app.Post("/upload", uploadFile)
+
 	app.Listen(":8080")
+}
+
+func uploadFile(c *fiber.Ctx) error {
+	file, err := c.FormFile("image")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
+	}
+
+	if err = c.SaveFile(file, "./uploads/"+file.Filename); err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
+
+	return c.SendStatus(fiber.StatusOK)
+}
+
+type User struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+var memberUser = User{
+	Email:    "bank",
+	Password: "1234",
+}
+
+func login(c *fiber.Ctx) error {
+	user := new(User)
+	if err := c.BodyParser(user); err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
+	}
+
+	if user.Email == memberUser.Email && user.Password == memberUser.Password {
+		// Create the Claims
+		claims := jwt.MapClaims{
+			"email": user.Email,
+			"role":  "admin",
+			"exp":   time.Now().Add(time.Hour * 72).Unix(),
+		}
+
+		// Create token
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+		// Generate encoded token and send it as response.
+		t, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+		if err != nil {
+			return c.SendStatus(fiber.StatusInternalServerError)
+		}
+
+		return c.JSON(fiber.Map{
+			"message": "success",
+			"token":   t,
+		})
+	} else {
+		return fiber.ErrUnauthorized
+	}
+}
+
+func checkMiddleWare(c *fiber.Ctx) error {
+	user := c.Locals("user").(*)
+	claims := user.Claims.(jwt.MapClaims)
+
+	if claims["role"] != "admin" {
+		return fiber.ErrUnauthorized
+	}
+
+	return c.Next()
 }
