@@ -4,7 +4,6 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
-	_ "github.com/mikelopster/fiber-basic/docs" // load generated docs
 )
 
 // Handler functions

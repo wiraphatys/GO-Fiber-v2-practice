@@ -9,6 +9,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/joho/godotenv"
+
+	"github.com/gofiber/swagger"
+  _ "github.com/wiraphatys/GO-Fiber-v2-practice/docs" // load generated docs
 )
 
 // @title Book API
@@ -27,6 +30,8 @@ func main() {
 	}
 
 	app := fiber.New()
+
+	app.Get("/swagger/*", swagger.HandlerDefault)
 
 	books = append(books, Book{ID: 1, Title: "GO Tutorial", Author: "Banky"})
 	books = append(books, Book{ID: 2, Title: "JAVA Master", Author: "Banky"})
